@@ -1,19 +1,23 @@
 """
-Persistencia simples para o Python Server - Parte 1 (passo 2)
+Persistencia simples para o Python Server - Parte 1 (passo 3)
 
-Escopo DESTE passo: persistir apenas LOGINS (bot_name + timestamp).
-CHANNEL_CREATE / CHANNEL_LIST ainda nao existem, portanto nao ha
-persistencia de canais aqui ainda.
+Persiste dois tipos de dado, cada um em seu proprio arquivo MessagePack:
+    - logins:   bot_name + sender_lang + timestamp
+    - channels: channel_name + created_by + timestamp
 
 Formato escolhido (ver decisao registrada no historico do projeto):
-    Um unico arquivo MessagePack contendo uma LISTA de registros de login.
-    A cada novo login bem-sucedido: le a lista inteira, adiciona o
-    registro, regrava o arquivo inteiro.
+    Cada arquivo contem uma LISTA de registros. A cada escrita: le a
+    lista inteira, adiciona o registro, regrava o arquivo inteiro.
 
     Isso e intencionalmente simples. Nao ha banco de dados, nao ha
     escrita incremental/append-only. Para o volume de um projeto
     academico isso e adequado; nao e otimizado para grande volume de
     escritas (cada escrita reescreve o arquivo inteiro).
+
+Este modulo e "burro" de proposito: ele so sabe carregar/salvar listas
+em disco. Regras de negocio (ex.: impedir nome de canal duplicado) NAO
+ficam aqui -- ficam no server.py, que decide o que fazer antes de
+chamar append_channel/append_login.
 
 Concorrencia: este modulo assume um UNICO processo, single-threaded,
 processando uma requisicao REP por vez (e assim que o server.py atual
@@ -28,6 +32,7 @@ import msgpack
 
 DEFAULT_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 DEFAULT_LOGINS_PATH = os.path.join(DEFAULT_DATA_DIR, "logins.msgpack")
+DEFAULT_CHANNELS_PATH = os.path.join(DEFAULT_DATA_DIR, "channels.msgpack")
 
 
 def _ensure_parent_dir(path: str) -> None:
@@ -36,13 +41,13 @@ def _ensure_parent_dir(path: str) -> None:
         os.makedirs(parent, exist_ok=True)
 
 
-def load_logins(path: str = DEFAULT_LOGINS_PATH) -> list:
-    """Carrega a lista de logins persistidos.
+def _load_list(path: str) -> list:
+    """Carrega uma lista persistida de um arquivo MessagePack.
 
-    Retorna [] se o arquivo ainda nao existe (primeira execucao do
-    servidor) ou estiver vazio/corrompido -- nesse caso o servidor deve
-    poder subir normalmente, apenas com historico vazio, em vez de
-    falhar ao iniciar.
+    Retorna [] se o arquivo ainda nao existe (primeira execucao),
+    estiver vazio, ou corrompido/truncado -- nesses casos o servidor
+    deve poder subir normalmente, apenas com historico vazio, em vez
+    de falhar ao iniciar.
     """
     if not os.path.exists(path):
         return []
@@ -60,28 +65,60 @@ def load_logins(path: str = DEFAULT_LOGINS_PATH) -> list:
         data = msgpack.unpackb(raw, raw=False)
     except (msgpack.exceptions.UnpackException, ValueError):
         # Arquivo corrompido/truncado: nao derruba o servidor, apenas
-        # comeca com historico vazio. Isso e uma decisao conservadora
-        # para nao bloquear a demonstracao por causa de um arquivo ruim.
+        # comeca com lista vazia. Decisao conservadora para nao
+        # bloquear a demonstracao por causa de um arquivo ruim.
         return []
 
     return data if isinstance(data, list) else []
 
 
-def save_logins(logins: list, path: str = DEFAULT_LOGINS_PATH) -> None:
-    """Regrava o arquivo inteiro com a lista atual de logins."""
+def _save_list(items: list, path: str) -> None:
+    """Regrava o arquivo inteiro com a lista atual de itens."""
     _ensure_parent_dir(path)
-    packed = msgpack.packb(logins, use_bin_type=True)
+    packed = msgpack.packb(items, use_bin_type=True)
     with open(path, "wb") as f:
         f.write(packed)
 
 
-def append_login(record: dict, path: str = DEFAULT_LOGINS_PATH) -> list:
-    """Adiciona um registro de login e persiste a lista atualizada.
+def _append_item(record: dict, path: str) -> list:
+    """Adiciona um registro a lista persistida em `path` e a resalva.
 
     Retorna a lista completa e atualizada, para o chamador manter em
     memoria sem precisar reler o arquivo em seguida.
     """
-    logins = load_logins(path)
-    logins.append(record)
-    save_logins(logins, path)
-    return logins
+    items = _load_list(path)
+    items.append(record)
+    _save_list(items, path)
+    return items
+
+
+# ---------------------------------------------------------------------
+# Logins
+# ---------------------------------------------------------------------
+
+def load_logins(path: str = DEFAULT_LOGINS_PATH) -> list:
+    return _load_list(path)
+
+
+def save_logins(logins: list, path: str = DEFAULT_LOGINS_PATH) -> None:
+    _save_list(logins, path)
+
+
+def append_login(record: dict, path: str = DEFAULT_LOGINS_PATH) -> list:
+    return _append_item(record, path)
+
+
+# ---------------------------------------------------------------------
+# Channels
+# ---------------------------------------------------------------------
+
+def load_channels(path: str = DEFAULT_CHANNELS_PATH) -> list:
+    return _load_list(path)
+
+
+def save_channels(channels: list, path: str = DEFAULT_CHANNELS_PATH) -> None:
+    _save_list(channels, path)
+
+
+def append_channel(record: dict, path: str = DEFAULT_CHANNELS_PATH) -> list:
+    return _append_item(record, path)

@@ -54,9 +54,14 @@ enunciado.
 
 ### Status desta etapa
 
-Implementado até aqui: **`LOGIN_REQUEST` / `LOGIN_RESPONSE`**, em Python,
-sem persistência. `CHANNEL_CREATE_*` e `CHANNEL_LIST_*` ainda não
-implementados (próximos passos).
+Implementado até aqui, em Python: **`LOGIN_REQUEST`/`LOGIN_RESPONSE`**,
+**`CHANNEL_CREATE_REQUEST`/`CHANNEL_CREATE_RESPONSE`** e
+**`CHANNEL_LIST_REQUEST`/`CHANNEL_LIST_RESPONSE`**, com persistência em
+disco (MessagePack) para logins e canais. Java ainda não implementado.
+
+Nome de canal duplicado é tratado como erro (`status: ERROR`), comparação
+exata case-sensitive — decisão de implementação, não especificada pelo
+enunciado.
 
 ## Portas (Parte 1)
 

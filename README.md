@@ -1,9 +1,10 @@
 # vet_flow — Sistema Distribuído de Mensagens (Clínica Veterinária)
 
 > **Status atual do projeto: Parte 1, em andamento.**
-> Implementado até aqui: login de bots via `LOGIN_REQUEST`/`LOGIN_RESPONSE`,
-> **sem persistência ainda**. Este README documenta apenas o que já existe —
-> não descreve funcionalidades futuras como já implementadas.
+> Implementado até aqui: login, criação e listagem de canais, todos com
+> persistência em disco — **apenas em Python**. Este README documenta
+> apenas o que já existe — não descreve funcionalidades futuras como já
+> implementadas.
 
 ## Objetivo
 
@@ -30,14 +31,14 @@ O contrato de mensagens comum entre Python e Java está documentado em
 [`protocol/PROTOCOL.md`](protocol/PROTOCOL.md) e é atualizado conforme cada
 parte é implementada.
 
-## O que já está implementado (Parte 1, passo 1)
+## O que já está implementado (Parte 1)
 
-- `python/server`: servidor ZeroMQ (`REP`) que recebe `LOGIN_REQUEST` em
-  MessagePack e responde `LOGIN_RESPONSE`.
-- `python/client`: bot ZeroMQ (`REQ`) que envia `LOGIN_REQUEST` e exibe a
-  resposta.
-- Sem persistência em disco ainda.
-- Sem criação/listagem de canais ainda.
+- `python/server`: servidor ZeroMQ (`REP`) que trata `LOGIN_REQUEST`,
+  `CHANNEL_CREATE_REQUEST` e `CHANNEL_LIST_REQUEST`, com persistência em
+  disco (MessagePack) para logins e canais.
+- `python/client`: bot ZeroMQ (`REQ`) que envia uma dessas requisições por
+  execução, escolhida via variável `ACTION`.
+- Nome de canal duplicado é rejeitado com erro.
 - Sem implementação Java ainda.
 
 ## Estrutura de diretórios
@@ -81,9 +82,13 @@ obrigatória — todas têm valor padrão seguro no código.
 
 | Variável | Usado por | Padrão | Descrição |
 |---|---|---|---|
-| `BOT_NAME` | client | `bot-python-1` | Nome do bot que faz login |
+| `BOT_NAME` | client | `bot-python-1` | Nome do bot que faz login / cria canais |
 | `SERVER_ADDRESS` | client | `tcp://localhost:5555` | Endereço do servidor |
+| `ACTION` | client | `LOGIN` | Ação a executar: `LOGIN`, `CHANNEL_CREATE` ou `CHANNEL_LIST` |
+| `CHANNEL_NAME` | client | `avisos-gerais` | Nome do canal, usado quando `ACTION=CHANNEL_CREATE` |
 | `SERVER_BIND_ADDRESS` | server | `tcp://*:5555` | Endereço de bind do servidor |
+| `LOGINS_PERSISTENCE_PATH` | server | `python/server/data/logins.msgpack` | Caminho do arquivo de persistência de logins |
+| `CHANNELS_PERSISTENCE_PATH` | server | `python/server/data/channels.msgpack` | Caminho do arquivo de persistência de canais |
 
 O projeto **não** usa `python-dotenv` — as variáveis são lidas diretamente
 via `os.environ.get(...)`. Para usá-las, exporte-as no shell antes de rodar
@@ -98,49 +103,34 @@ cd python/server
 python3 server.py
 ```
 
-Deve aparecer: `[SERVER] Python Server (REP) ouvindo em tcp://*:5555`
+Deve aparecer: `[SERVER] Historico carregado: N login(s) e N canal(is) ...`
 
-**Terminal 2 — rodar o client (bot):**
-
-A forma de definir a variável de ambiente `BOT_NAME` antes de rodar o
-script muda conforme o terminal usado:
+**Terminal 2 — rodar o client (bot) para cada ação:**
 
 - **Linux / macOS (bash/zsh):**
   ```bash
   cd python/client
-  BOT_NAME="dra-ana-vet" python3 client.py
-  ```
-
-- **Windows — CMD (`cmd.exe`):**
-  ```cmd
-  cd python\client
-  set BOT_NAME=dra-ana-vet
-  python client.py
+  BOT_NAME="dra-ana-vet" ACTION=LOGIN python3 client.py
+  BOT_NAME="dra-ana-vet" ACTION=CHANNEL_CREATE CHANNEL_NAME="vacinas" python3 client.py
+  ACTION=CHANNEL_LIST python3 client.py
   ```
 
 - **Windows — PowerShell:**
   ```powershell
   cd python\client
-  $env:BOT_NAME="dra-ana-vet"
-  python client.py
+  $env:BOT_NAME="dra-ana-vet"; $env:ACTION="LOGIN"; python client.py
+  $env:ACTION="CHANNEL_CREATE"; $env:CHANNEL_NAME="vacinas"; python client.py
+  $env:ACTION="CHANNEL_LIST"; python client.py
   ```
 
-  ⚠️ **Atenção no PowerShell:** o comando `set BOT_NAME=dra-ana-vet` (sintaxe
-  do CMD) **não funciona como esperado no PowerShell** — ele não gera erro,
-  mas também não define a variável de ambiente para o processo filho, então
-  o client roda com o valor padrão (`bot-python-1`) em vez do valor que
-  você tentou definir. No PowerShell, use sempre `$env:NOME="valor"`.
+  ⚠️ Lembre-se: `set VAR=valor` (sintaxe do CMD) não funciona no PowerShell
+  — use sempre `$env:VAR="valor"`.
 
-Saída esperada no client (com `BOT_NAME=dra-ana-vet`):
+Saída esperada de `ACTION=CHANNEL_LIST`:
 
 ```
-[CLIENT] 'dra-ana-vet' conectando em tcp://localhost:5555
-[SEND] {'type': 'LOGIN_REQUEST', ...}
-[RECV] {'type': 'LOGIN_RESPONSE', ..., 'payload': {'status': 'OK'}}
-[CLIENT] Login realizado com sucesso: dra-ana-vet
+[CLIENT] Canais existentes (1): ['vacinas']
 ```
-
-No terminal do servidor, deve aparecer uma linha `[LOGIN] bot='dra-ana-vet' ...`.
 
 ## Docker
 
@@ -152,8 +142,7 @@ o projeto atingir esse ponto do roteiro.
 
 ## Próximos passos
 
-1. Persistência (login + timestamp; canais) no `python/server`.
-2. `CHANNEL_CREATE` / `CHANNEL_LIST`.
-3. Implementação Java equivalente (server + client).
-4. Teste de interoperabilidade Python ↔ Java.
-5. Dockerização (Parte 1 completa).
+1. Implementação Java equivalente (server + client): login, canais, persistência.
+2. Teste de interoperabilidade Python ↔ Java.
+3. Dockerização (Parte 1 completa).
+4. Parte 2 (Pub/Sub + broker).
